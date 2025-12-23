@@ -505,8 +505,8 @@ while True:
     print(f"[TIMING] Handling multiple steps and computing sensitivities: {handling_steps_time:.3f} s")
 
     # buckling sensitivities
-    buckling_start = time.time()
     if optimization_base == "buckling":
+        buckling_start = time.time()
         # eigen energy density normalization
         #energy_density_eigen[eigen_number][en_last] = np.average(ener_int_pt)
         denominator = []  # normalization denominator for each buckling factor with numbering from 0
@@ -525,7 +525,6 @@ while True:
                 sensitivity_number[en] = energy_density_eigen[1][en] / denominator[0]
                 for bfn in bf_dif:
                     sensitivity_number[en] += energy_density_eigen[bfn + 1][en] / denominator[bfn] * bf_coef[bfn]
-    if optimization_base == "buckling":
         buckling_time = time.time() - buckling_start
         print(f"[TIMING] Buckling sensitivities computation: {buckling_time:.3f} s")
 
