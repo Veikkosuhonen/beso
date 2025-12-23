@@ -365,17 +365,23 @@ def run1(file_name, sensitivity_number, weight_factor_node, M, weight_factor_dis
     sensitivity_number_node = {}  # hypothetical sensitivity number of each node
     for nn in nodes:
         if nn in M:
-            sensitivity_number_node[nn] = 0
+            sensitivity_number_node[nn] = 0.0
+            # Get local references to avoid repeated lookups
+            weight_factors = weight_factor_node[nn]
             for en in M[nn]:
-                sensitivity_number_node[nn] += weight_factor_node[nn][en] * sensitivity_number[en]
+                sensitivity_number_node[nn] += weight_factors[en] * sensitivity_number[en]
     sensitivity_number_filtered = sensitivity_number.copy()  # sensitivity number of each element after filtering
     for en in opt_domains:
-        numerator = 0
-        denominator = 0
-        for nn in near_nodes[en]:
+        numerator = 0.0
+        denominator = 0.0
+        # Get local references to avoid repeated lookups
+        near_node_list = near_nodes[en]
+        for nn in near_node_list:
             try:
-                numerator += weight_factor_distance[(en, nn)] * sensitivity_number_node[nn]
-                denominator += weight_factor_distance[(en, nn)]
+                # Get weight once
+                weight = weight_factor_distance[(en, nn)]
+                numerator += weight * sensitivity_number_node[nn]
+                denominator += weight
             except KeyError:
                 pass
         if denominator != 0:
@@ -494,12 +500,17 @@ def prepare2s(cg, cg_min, cg_max, r_min, opt_domains, weight_factor2, near_elm):
 def run2(file_name, sensitivity_number, weight_factor2, near_elm, opt_domains):
     sensitivity_number_filtered = sensitivity_number.copy()  # sensitivity number of each element after filtering
     for en in opt_domains:
-        numerator = 0
-        denominator = 0
-        for en2 in near_elm[en]:
+        numerator = 0.0
+        denominator = 0.0
+        # Get local references to avoid repeated lookups
+        near_elements = near_elm[en]
+        for en2 in near_elements:
+            # Compute tuple key once
             ee = (min(en, en2), max(en, en2))
-            numerator += weight_factor2[ee] * sensitivity_number[en2]
-            denominator += weight_factor2[ee]
+            # Get weight and sensitivity once
+            weight = weight_factor2[ee]
+            numerator += weight * sensitivity_number[en2]
+            denominator += weight
         if denominator != 0:
             sensitivity_number_filtered[en] = numerator / denominator
         else:
@@ -656,20 +667,26 @@ def run3(sensitivity_number, weight_factor3, near_elm, near_points):
 
     # weighted averaging of sensitivity number from elements to points
     for pn in near_elm:
-        numerator = 0
-        denominator = 0
-        for en in near_elm[pn]:
-            numerator += weight_factor3[(en, pn)] * sensitivity_number[en]
-            denominator += weight_factor3[(en, pn)]
+        numerator = 0.0
+        denominator = 0.0
+        # Get local reference to avoid repeated lookups
+        near_elements = near_elm[pn]
+        for en in near_elements:
+            weight = weight_factor3[(en, pn)]
+            numerator += weight * sensitivity_number[en]
+            denominator += weight
         point_sensitivity[pn] = numerator / denominator
 
     # weighted averaging of sensitivity number from points back to elements
     for en in near_points:
-        numerator = 0
-        denominator = 0
-        for pn in near_points[en]:
-            numerator += weight_factor3[(en, pn)] * point_sensitivity[pn]
-            denominator += weight_factor3[(en, pn)]
+        numerator = 0.0
+        denominator = 0.0
+        # Get local reference to avoid repeated lookups
+        near_point_list = near_points[en]
+        for pn in near_point_list:
+            weight = weight_factor3[(en, pn)]
+            numerator += weight * point_sensitivity[pn]
+            denominator += weight
         sensitivity_number_filtered[en] = numerator / denominator
 
     return sensitivity_number_filtered
@@ -777,8 +794,10 @@ def run_morphology(sensitivity_number, near_elm, opt_domains, filter_type, FI_st
     def filter(filter_type, sensitivity_number, near_elm, opt_domains):
         sensitivity_number_subtype = sensitivity_number.copy()
         for en in opt_domains:
+            # Get local reference to avoid repeated lookups
+            near_elements = near_elm[en]
             sensitivity_number_near = [sensitivity_number[en]]
-            for en2 in near_elm[en]:
+            for en2 in near_elements:
                 sensitivity_number_near.append(sensitivity_number[en2])
             if filter_type == "erode":
                 if FI_step_max:
@@ -931,13 +950,17 @@ def run2_casting(sensitivity_number, above_elm, below_elm, opt_domains):
     # use average of below sensitivities
     for en in opt_domains:
         sensitivities_below = [sensitivity_number[en]]
-        for en2 in below_elm[en]:
+        # Get local reference to avoid repeated lookups
+        below_elements = below_elm[en]
+        for en2 in below_elements:
             sensitivities_below.append(sensitivity_number[en2])
-            sensitivity_number_averaged[en] = np.average(sensitivities_below)
+        sensitivity_number_averaged[en] = np.average(sensitivities_below)
     # use maximum of above (just averaged) sensitivities
     for en in opt_domains:
         sensitivities_above = [sensitivity_number_averaged[en]]
-        for en2 in above_elm[en]:
+        # Get local reference to avoid repeated lookups
+        above_elements = above_elm[en]
+        for en2 in above_elements:
             sensitivities_above.append(sensitivity_number_averaged[en2])
         sensitivity_number_filtered[en] = max(sensitivities_above)
     return sensitivity_number_filtered
