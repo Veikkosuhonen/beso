@@ -394,7 +394,7 @@ while True:
                        domain_FI_filled)
     write_inp_time = time.time() - write_inp_start
     print(f"[TIMING] Writing .inp file: {write_inp_time:.3f} s")
-    
+
     # running CalculiX analysis
     calculix_start = time.time()
     if sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
@@ -403,7 +403,7 @@ while True:
         exit_status = subprocess.call([os.path.normpath(path_calculix), file_nameW], cwd=path, shell=True)
     calculix_time = time.time() - calculix_start
     print(f"[TIMING] CalculiX solver execution: {calculix_time:.3f} s")
-    
+
     # check CalculiX exit status
     if exit_status == 201:
         msg = "ERROR: CalculiX exit status 201. It cannot open inp file.\n"
@@ -712,7 +712,7 @@ while True:
     beso_plots.replot(path, i, oscillations, mass, domain_FI_filled, domains_from_config, FI_violated, FI_mean,
                       FI_mean_without_state0, FI_max, optimization_base, energy_density_mean, heat_flux_mean,
                       displacement_graph, disp_max, buckling_factors_all, savefig=True)
-    
+
     i += 1  # iteration number
     print("\n----------- new iteration number %d ----------" % i)
 
