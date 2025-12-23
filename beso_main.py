@@ -702,11 +702,21 @@ while True:
             if "vtk" in save_resulting_format:
                 beso_lib.export_vtk(file_nameW, nodes, Elements, elm_states, sensitivity_number, criteria, FI_step,
                                     FI_step_max)
+        # Log total iteration time before exiting
+        iteration_time = time.time() - iteration_start_time
+        print(f"[TIMING] Total iteration {i} time: {iteration_time:.3f} s")
+        print(f"[TIMING] ---")
         break
     # plot and save figures
     beso_plots.replot(path, i, oscillations, mass, domain_FI_filled, domains_from_config, FI_violated, FI_mean,
                       FI_mean_without_state0, FI_max, optimization_base, energy_density_mean, heat_flux_mean,
                       displacement_graph, disp_max, buckling_factors_all, savefig=True)
+    
+    # Log total iteration time before incrementing i
+    iteration_time = time.time() - iteration_start_time
+    print(f"[TIMING] Total iteration {i} time: {iteration_time:.3f} s")
+    print(f"[TIMING] ---")
+    
     i += 1  # iteration number
     print("\n----------- new iteration number %d ----------" % i)
 
@@ -840,11 +850,6 @@ while True:
             os.remove(file_nameW + ".12d")
         except FileNotFoundError:
             pass
-    
-    # Log total iteration time
-    iteration_time = time.time() - iteration_start_time
-    print(f"[TIMING] Total iteration {i} time: {iteration_time:.3f} s")
-    print(f"[TIMING] ---")
 
 # export the resulting mesh
 if not (save_iteration_results and np.mod(float(i), save_iteration_results) == 0):
