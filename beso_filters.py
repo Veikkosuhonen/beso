@@ -370,7 +370,8 @@ def run1(file_name, sensitivity_number, weight_factor_node, M, weight_factor_dis
             weight_factors = weight_factor_node[nn]
             for en in M[nn]:
                 sensitivity_number_node[nn] += weight_factors[en] * sensitivity_number[en]
-    sensitivity_number_filtered = sensitivity_number.copy()  # sensitivity number of each element after filtering
+    # Only create a dict for updated values, avoiding full copy
+    updates = {}
     for en in opt_domains:
         numerator = 0.0
         denominator = 0.0
@@ -385,7 +386,7 @@ def run1(file_name, sensitivity_number, weight_factor_node, M, weight_factor_dis
             except KeyError:
                 pass
         if denominator != 0:
-            sensitivity_number_filtered[en] = numerator / denominator
+            updates[en] = numerator / denominator
         else:
             msg = "\nERROR: filter over nodes failed due to division by 0." \
                   "Some element CG has not a node in distance <= r_min.\n"
@@ -393,7 +394,9 @@ def run1(file_name, sensitivity_number, weight_factor_node, M, weight_factor_dis
             beso_lib.write_to_log(file_name, msg)
             filter_on_sensitivity = 0
             return sensitivity_number
-    return sensitivity_number_filtered
+    # Update the original dictionary with new values
+    sensitivity_number.update(updates)
+    return sensitivity_number
 
 
 # function preparing values for filtering element rho to suppress checkerboard
@@ -498,21 +501,22 @@ def prepare2s(cg, cg_min, cg_max, r_min, opt_domains, weight_factor2, near_elm):
 # function to filter sensitivity number to suppress checkerboard
 # simplified version: makes weighted average of sensitivity numbers from near elements
 def run2(file_name, sensitivity_number, weight_factor2, near_elm, opt_domains):
-    sensitivity_number_filtered = sensitivity_number.copy()  # sensitivity number of each element after filtering
+    # Only create a dict for updated values, avoiding full copy
+    updates = {}
     for en in opt_domains:
         numerator = 0.0
         denominator = 0.0
         # Get local references to avoid repeated lookups
         near_elements = near_elm[en]
         for en2 in near_elements:
-            # Compute tuple key once
-            ee = (min(en, en2), max(en, en2))
+            # Compute tuple key once - optimized to avoid function calls
+            ee = (en, en2) if en < en2 else (en2, en)
             # Get weight and sensitivity once
             weight = weight_factor2[ee]
             numerator += weight * sensitivity_number[en2]
             denominator += weight
         if denominator != 0:
-            sensitivity_number_filtered[en] = numerator / denominator
+            updates[en] = numerator / denominator
         else:
             msg = "\nERROR: simple filter failed due to division by 0." \
                   "Some element has not a near element in distance <= r_min.\n"
@@ -520,7 +524,9 @@ def run2(file_name, sensitivity_number, weight_factor2, near_elm, opt_domains):
             beso_lib.write_to_log(file_name, msg)
             filter_on_sensitivity = 0
             return sensitivity_number
-    return sensitivity_number_filtered
+    # Update the original dictionary with new values
+    sensitivity_number.update(updates)
+    return sensitivity_number
 
 
 # function preparing values for filtering element sensitivity number using own point mesh
@@ -662,7 +668,6 @@ def prepare3_tetra_grid(file_name, cg, r_min, opt_domains):
 # function for filtering element sensitivity number using own point mesh
 # currently works only with elements in opt_domains
 def run3(sensitivity_number, weight_factor3, near_elm, near_points):
-    sensitivity_number_filtered = sensitivity_number.copy()  # sensitivity number of each element after filtering
     point_sensitivity = {}
 
     # weighted averaging of sensitivity number from elements to points
@@ -677,6 +682,8 @@ def run3(sensitivity_number, weight_factor3, near_elm, near_points):
             denominator += weight
         point_sensitivity[pn] = numerator / denominator
 
+    # Only create a dict for updated values, avoiding full copy
+    updates = {}
     # weighted averaging of sensitivity number from points back to elements
     for en in near_points:
         numerator = 0.0
@@ -687,9 +694,11 @@ def run3(sensitivity_number, weight_factor3, near_elm, near_points):
             weight = weight_factor3[(en, pn)]
             numerator += weight * point_sensitivity[pn]
             denominator += weight
-        sensitivity_number_filtered[en] = numerator / denominator
+        updates[en] = numerator / denominator
 
-    return sensitivity_number_filtered
+    # Update the original dictionary with new values
+    sensitivity_number.update(updates)
+    return sensitivity_number
 
 
 # function preparing values for morphology based filtering
@@ -792,7 +801,8 @@ def prepare_morphology(cg, cg_min, cg_max, r_min, opt_domains, near_elm):
 def run_morphology(sensitivity_number, near_elm, opt_domains, filter_type, FI_step_max=None):
 
     def filter(filter_type, sensitivity_number, near_elm, opt_domains):
-        sensitivity_number_subtype = sensitivity_number.copy()
+        # Only create a dict for updated values, avoiding full copy
+        updates = {}
         for en in opt_domains:
             # Get local reference to avoid repeated lookups
             near_elements = near_elm[en]
@@ -802,40 +812,46 @@ def run_morphology(sensitivity_number, near_elm, opt_domains, filter_type, FI_st
             if filter_type == "erode":
                 if FI_step_max:
                     if FI_step_max[en] >= 1:  # if failing, do not switch down
-                        pass
+                        updates[en] = sensitivity_number[en]  # no change
                     else:
-                        sensitivity_number_subtype[en] = min(sensitivity_number_near)
+                        updates[en] = min(sensitivity_number_near)
                 else:
-                    sensitivity_number_subtype[en] = min(sensitivity_number_near)
+                    updates[en] = min(sensitivity_number_near)
             elif filter_type == "dilate":
-                sensitivity_number_subtype[en] = max(sensitivity_number_near)
-        return sensitivity_number_subtype
+                updates[en] = max(sensitivity_number_near)
+        # Update the dictionary with new values
+        sensitivity_number.update(updates)
+        return sensitivity_number
 
-    sensitivity_number_filtered = sensitivity_number.copy()
     if filter_type in ["erode", "dilate"]:
-        sensitivity_number_filtered = filter(filter_type, sensitivity_number, near_elm, opt_domains)
+        return filter(filter_type, sensitivity_number, near_elm, opt_domains)
     elif filter_type == "open":
-        sensitivity_number_1 = filter("erode", sensitivity_number, near_elm, opt_domains)
-        sensitivity_number_filtered = filter("dilate", sensitivity_number_1, near_elm, opt_domains)
+        sensitivity_number = filter("erode", sensitivity_number, near_elm, opt_domains)
+        return filter("dilate", sensitivity_number, near_elm, opt_domains)
     elif filter_type == "close":
-        sensitivity_number_1 = filter("dilate", sensitivity_number, near_elm, opt_domains)
-        sensitivity_number_filtered = filter("erode", sensitivity_number_1, near_elm, opt_domains)
+        sensitivity_number = filter("dilate", sensitivity_number, near_elm, opt_domains)
+        return filter("erode", sensitivity_number, near_elm, opt_domains)
     elif filter_type == "open-close":
-        sensitivity_number_1 = filter("erode", sensitivity_number, near_elm, opt_domains)
-        sensitivity_number_1 = filter("dilate", sensitivity_number_1, near_elm, opt_domains)
-        sensitivity_number_1 = filter("dilate", sensitivity_number_1, near_elm, opt_domains)
-        sensitivity_number_filtered = filter("erode", sensitivity_number_1, near_elm, opt_domains)
+        sensitivity_number = filter("erode", sensitivity_number, near_elm, opt_domains)
+        sensitivity_number = filter("dilate", sensitivity_number, near_elm, opt_domains)
+        sensitivity_number = filter("dilate", sensitivity_number, near_elm, opt_domains)
+        return filter("erode", sensitivity_number, near_elm, opt_domains)
     elif filter_type == "close-open":
-        sensitivity_number_1 = filter("dilate", sensitivity_number, near_elm, opt_domains)
-        sensitivity_number_1 = filter("erode", sensitivity_number_1, near_elm, opt_domains)
-        sensitivity_number_1 = filter("erode", sensitivity_number_1, near_elm, opt_domains)
-        sensitivity_number_filtered = filter("dilate", sensitivity_number_1, near_elm, opt_domains)
+        sensitivity_number = filter("dilate", sensitivity_number, near_elm, opt_domains)
+        sensitivity_number = filter("erode", sensitivity_number, near_elm, opt_domains)
+        sensitivity_number = filter("erode", sensitivity_number, near_elm, opt_domains)
+        return filter("dilate", sensitivity_number, near_elm, opt_domains)
     elif filter_type == "combine":
-        sensitivity_number_1 = filter("erode", sensitivity_number, near_elm, opt_domains)
-        sensitivity_number_2 = filter("dilate", sensitivity_number, near_elm, opt_domains)
+        # For combine, we need to preserve the original values
+        sensitivity_number_1 = {k: v for k, v in sensitivity_number.items()}
+        sensitivity_number_2 = {k: v for k, v in sensitivity_number.items()}
+        sensitivity_number_1 = filter("erode", sensitivity_number_1, near_elm, opt_domains)
+        sensitivity_number_2 = filter("dilate", sensitivity_number_2, near_elm, opt_domains)
+        updates = {}
         for en in opt_domains:
-            sensitivity_number_filtered[en] = (sensitivity_number_1[en] + sensitivity_number_2[en]) / 2.0
-    return sensitivity_number_filtered
+            updates[en] = (sensitivity_number_1[en] + sensitivity_number_2[en]) / 2.0
+        sensitivity_number.update(updates)
+        return sensitivity_number
 
 
 # function preparing values for the casting filter
@@ -945,22 +961,29 @@ def prepare2s_casting(cg, r_min, opt_domains, above_elm, below_elm, casting_vect
 # function to filter sensitivity number to suppress checkerboard
 # simplified version: makes weighted average of sensitivity numbers from near elements
 def run2_casting(sensitivity_number, above_elm, below_elm, opt_domains):
-    sensitivity_number_averaged = sensitivity_number.copy()
-    sensitivity_number_filtered = sensitivity_number.copy()  # sensitivity number of each element after filtering
-    # use average of below sensitivities
+    # First pass: compute averaged values
+    updates_avg = {}
     for en in opt_domains:
         sensitivities_below = [sensitivity_number[en]]
         # Get local reference to avoid repeated lookups
         below_elements = below_elm[en]
         for en2 in below_elements:
             sensitivities_below.append(sensitivity_number[en2])
-        sensitivity_number_averaged[en] = np.average(sensitivities_below)
-    # use maximum of above (just averaged) sensitivities
+        updates_avg[en] = np.average(sensitivities_below)
+    
+    # Update with averaged values
+    sensitivity_number.update(updates_avg)
+    
+    # Second pass: use maximum of above (just averaged) sensitivities
+    updates_filtered = {}
     for en in opt_domains:
-        sensitivities_above = [sensitivity_number_averaged[en]]
+        sensitivities_above = [sensitivity_number[en]]
         # Get local reference to avoid repeated lookups
         above_elements = above_elm[en]
         for en2 in above_elements:
-            sensitivities_above.append(sensitivity_number_averaged[en2])
-        sensitivity_number_filtered[en] = max(sensitivities_above)
-    return sensitivity_number_filtered
+            sensitivities_above.append(sensitivity_number[en2])
+        updates_filtered[en] = max(sensitivities_above)
+    
+    # Update with filtered values
+    sensitivity_number.update(updates_filtered)
+    return sensitivity_number
