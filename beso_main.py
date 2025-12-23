@@ -693,6 +693,11 @@ while True:
             continue_iterations = False
             print("energy_density_mean[i] == energy_density_mean[i-1] == energy_density_mean[i-2]")
 
+    # Log total iteration time before exiting or continuing
+    iteration_time = time.time() - iteration_start_time
+    print(f"[TIMING] Total iteration {i} time: {iteration_time:.3f} s")
+    print(f"[TIMING] ---")
+
     # finish or start new iteration
     if continue_iterations is False or i >= iterations_limit:
         if not(save_iteration_results and np.mod(float(i), save_iteration_results) == 0):
@@ -702,20 +707,11 @@ while True:
             if "vtk" in save_resulting_format:
                 beso_lib.export_vtk(file_nameW, nodes, Elements, elm_states, sensitivity_number, criteria, FI_step,
                                     FI_step_max)
-        # Log total iteration time before exiting
-        iteration_time = time.time() - iteration_start_time
-        print(f"[TIMING] Total iteration {i} time: {iteration_time:.3f} s")
-        print(f"[TIMING] ---")
         break
     # plot and save figures
     beso_plots.replot(path, i, oscillations, mass, domain_FI_filled, domains_from_config, FI_violated, FI_mean,
                       FI_mean_without_state0, FI_max, optimization_base, energy_density_mean, heat_flux_mean,
                       displacement_graph, disp_max, buckling_factors_all, savefig=True)
-    
-    # Log total iteration time before incrementing i
-    iteration_time = time.time() - iteration_start_time
-    print(f"[TIMING] Total iteration {i} time: {iteration_time:.3f} s")
-    print(f"[TIMING] ---")
     
     i += 1  # iteration number
     print("\n----------- new iteration number %d ----------" % i)
