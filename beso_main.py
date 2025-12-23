@@ -157,6 +157,7 @@ file_name = os.path.join(path, file_name)
 beso_lib.write_to_log(file_name, msg)
 
 # mesh and domains importing
+import_mesh_start = time.time()
 [nodes, Elements, domains, opt_domains, en_all, plane_strain, plane_stress, axisymmetry] = beso_lib.import_inp(
     file_name, domains_from_config, domain_optimized, shells_as_composite)
 domain_shells = {}
@@ -167,6 +168,8 @@ for dn in domains_from_config:  # distinguishing shell elements and volume eleme
     domain_volumes[dn] = set(domains[dn]).intersection(list(Elements.tetra4.keys()) + list(Elements.tetra10.keys()) +
                                                        list(Elements.hexa8.keys()) + list(Elements.hexa20.keys()) +
                                                        list(Elements.penta6.keys()) + list(Elements.penta15.keys()))
+import_mesh_time = time.time() - import_mesh_start
+print(f"[TIMING] Mesh and domains importing: {import_mesh_time:.3f} s")
 
 # initialize element states
 elm_states = {}
@@ -193,7 +196,11 @@ else:
             elm_states[en] = len(domain_density[dn]) - 1  # set to highest state
 
 # computing volume or area, and centre of gravity of each element
+elm_volume_cg_start = time.time()
 [cg, cg_min, cg_max, volume_elm, area_elm] = beso_lib.elm_volume_cg(file_name, nodes, Elements)
+elm_volume_cg_time = time.time() - elm_volume_cg_start
+print(f"[TIMING] Computing element volumes and center of gravity: {elm_volume_cg_time:.3f} s")
+
 mass = [0.0]
 mass_full = 0  # sum from initial states TODO make it independent on starting elm_states?
 
@@ -230,6 +237,7 @@ if iterations_limit == "auto":  # automatic setting
     beso_lib.write_to_log(file_name, msg)
 
 # preparing parameters for filtering sensitivity numbers
+filter_prep_start = time.time()
 weight_factor2 = {}
 near_elm = {}
 weight_factor3 = []
@@ -306,6 +314,8 @@ for ft in filter_list:
                                                                 weight_factor2, near_elm)
         elif ft[0].split()[0] in ["erode", "dilate", "open", "close", "open-close", "close-open", "combine"]:
             near_elm = beso_filters.prepare_morphology(cg, cg_min, cg_max, f_range, domains_to_filter, near_elm)
+filter_prep_time = time.time() - filter_prep_start
+print(f"[TIMING] Preparing filter parameters: {filter_prep_time:.3f} s")
 
 # separating elements for reading nodal input
 if reference_points == "nodes":
@@ -373,18 +383,27 @@ elm_states_last = elm_states
 oscillations = False
 
 while True:
+    iteration_start_time = time.time()
     # creating the new .inp file for CalculiX
+    write_inp_start = time.time()
     file_nameW = os.path.join(path, "file" + str(i).zfill(3))
     beso_lib.write_inp(file_name, file_nameW, elm_states, number_of_states, domains, domains_from_config,
                        domain_optimized, domain_thickness, domain_offset, domain_orientation, domain_material,
                        domain_volumes, domain_shells, plane_strain, plane_stress, axisymmetry, save_iteration_results,
                        i, reference_points, shells_as_composite, optimization_base, displacement_graph,
                        domain_FI_filled)
+    write_inp_time = time.time() - write_inp_start
+    print(f"[TIMING] Writing .inp file: {write_inp_time:.3f} s")
+    
     # running CalculiX analysis
+    calculix_start = time.time()
     if sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
         exit_status = subprocess.call([os.path.normpath(path_calculix), file_nameW], cwd=path)
     else:
         exit_status = subprocess.call([os.path.normpath(path_calculix), file_nameW], cwd=path, shell=True)
+    calculix_time = time.time() - calculix_start
+    print(f"[TIMING] CalculiX solver execution: {calculix_time:.3f} s")
+    
     # check CalculiX exit status
     if exit_status == 201:
         msg = "ERROR: CalculiX exit status 201. It cannot open inp file.\n"
@@ -400,6 +419,7 @@ while True:
         beso_lib.write_to_log(file_name, msg)
 
     # reading results and computing failure indices
+    import_results_start = time.time()
     if (reference_points == "integration points") or (optimization_base == "stiffness") or \
             (optimization_base == "buckling") or (optimization_base == "heat"):  # from .dat file
         [FI_step, energy_density_step, disp_i, buckling_factors, energy_density_eigen, heat_flux] = \
@@ -410,6 +430,8 @@ while True:
                                           elm_states, steps_superposition)
         disp_i = beso_lib.import_displacement(file_nameW, displacement_graph, steps_superposition)
     disp_max.append(disp_i)
+    import_results_time = time.time() - import_results_start
+    print(f"[TIMING] Importing results and computing FI: {import_results_time:.3f} s")
 
     # check if results were found
     missing_ccx_results = False
@@ -447,6 +469,7 @@ while True:
         print("FI_max, number of violated elements, domain name")
 
     # handling with more steps
+    handling_steps_start = time.time()
     FI_step_max = {}  # maximal FI over all steps for each element in this iteration
     energy_density_enlist = {}   # {en1: [energy from sn1, energy from sn2, ...], en2: [], ...}
     FI_violated.append([])
@@ -478,8 +501,11 @@ while True:
         if domain_FI_filled:
             print(str(FI_max[i][dn]).rjust(15) + " " + str(FI_violated[i][dno]).rjust(4) + "   " + dn)
         dno += 1
+    handling_steps_time = time.time() - handling_steps_start
+    print(f"[TIMING] Handling multiple steps and computing sensitivities: {handling_steps_time:.3f} s")
 
     # buckling sensitivities
+    buckling_start = time.time()
     if optimization_base == "buckling":
         # eigen energy density normalization
         #energy_density_eigen[eigen_number][en_last] = np.average(ener_int_pt)
@@ -499,8 +525,12 @@ while True:
                 sensitivity_number[en] = energy_density_eigen[1][en] / denominator[0]
                 for bfn in bf_dif:
                     sensitivity_number[en] += energy_density_eigen[bfn + 1][en] / denominator[bfn] * bf_coef[bfn]
+    if optimization_base == "buckling":
+        buckling_time = time.time() - buckling_start
+        print(f"[TIMING] Buckling sensitivities computation: {buckling_time:.3f} s")
 
     # filtering sensitivity number
+    filtering_sensitivity_start = time.time()
     kp = 0
     kn = 0
     for ft in filter_list:
@@ -537,6 +567,8 @@ while True:
                 if ft[0].split()[1] == "sensitivity":
                     sensitivity_number = beso_filters.run_morphology(sensitivity_number, near_elm, domains_to_filter,
                                                                      ft[0].split()[0])
+    filtering_sensitivity_time = time.time() - filtering_sensitivity_start
+    print(f"[TIMING] Filtering sensitivity numbers: {filtering_sensitivity_time:.3f} s")
 
     if sensitivity_averaging:
         for en in opt_domains:
@@ -710,6 +742,7 @@ while True:
             mass_goal_i = mass_goal_ratio * mass_full
 
     # switch element states
+    switching_start = time.time()
     if ratio_type == "absolute":
         mass_referential = mass_full
     elif ratio_type == "relative":
@@ -719,8 +752,11 @@ while True:
                                             sensitivity_number, mass, mass_referential, mass_addition_ratio,
                                             mass_removal_ratio, compensate_state_filter, mass_excess, decay_coefficient,
                                             FI_violated, i_violated, i, mass_goal_i, domain_same_state)
+    switching_time = time.time() - switching_start
+    print(f"[TIMING] Switching element states: {switching_time:.3f} s")
 
     # filtering state
+    filtering_state_start = time.time()
     mass_not_filtered = mass[i]  # use variable to store the "right" mass
     for ft in filter_list:
         if ft[0] and ft[1]:
@@ -753,6 +789,8 @@ while True:
                                     mass[i] += volume_elm[en] * (
                                         domain_density[dn][elm_states_filtered[en]] - domain_density[dn][elm_states[en]])
                                     elm_states[en] = elm_states_filtered[en]
+    filtering_state_time = time.time() - filtering_state_start
+    print(f"[TIMING] Filtering state: {filtering_state_time:.3f} s")
     print("mass = {}" .format(mass[i]))
     mass_excess = mass[i] - mass_not_filtered
 
@@ -803,6 +841,11 @@ while True:
             os.remove(file_nameW + ".12d")
         except FileNotFoundError:
             pass
+    
+    # Log total iteration time
+    iteration_time = time.time() - iteration_start_time
+    print(f"[TIMING] Total iteration {i} time: {iteration_time:.3f} s")
+    print(f"[TIMING] ---")
 
 # export the resulting mesh
 if not (save_iteration_results and np.mod(float(i), save_iteration_results) == 0):
